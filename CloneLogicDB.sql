@@ -1,5 +1,5 @@
 
-
+GO
 ALTER PROCEDURE [dbo].[CloneLogicDB64](@CloneShema VARCHAR(MAX), @NuevoSchema VARCHAR(MAX))
 AS
 
@@ -12,7 +12,7 @@ BEGIN TRY
 ---================================================
 ---////////////////////////////////////////////////
 
-	PRINT 'Comenzando creación de SCHEMA...'
+	PRINT 'Comenzando creaciÃ³n de SCHEMA...'
 	SET @T_SQL = 'CREATE SCHEMA ' + @NuevoSchema + ''
 	EXEC(@T_SQL)
 	PRINT 'Completado creacion de SCHEMA!'
@@ -386,3 +386,5 @@ BEGIN CATCH
 END CATCH
 
 -->>> CloneLogicDB64 'dbo', 'GOTNX01'
+
+
