@@ -1,25 +1,32 @@
 
+
+
 GO
-ALTER PROCEDURE [dbo].[CloneLogicDB64](@CloneShema VARCHAR(MAX), @NuevoSchema VARCHAR(MAX))
+CREATE OR ALTER PROCEDURE sys_CloneDatabaseSchema(
+	@CopySchema VARCHAR(MAX),
+	@NewSchema VARCHAR(MAX)
+)
 AS
+--> by Dev. Josue Diaz
+--> https://www.linkedin.com/in/josue-diaz-8007611a1
+	
+--////Definitions
+DECLARE @T_SQL VARCHAR(MAX)
+DECLARE @Id_SCHEMA INT = (SELECT TOP 1 schema_id FROM sys.schemas WHERE name = @CopySchema)
 
---////Definiciones
-DECLARE @T_SQL VARCHAR(MAX) --usado por cursores..
-DECLARE @Id_SCHEMA INT = (SELECT TOP 1 schema_id FROM sys.schemas WHERE name = @CloneShema)
-
-BEGIN TRANSACTION ClonacionLogicaDataBaseJdz
+BEGIN TRANSACTION ts_CopySchemaJdz
 BEGIN TRY
 ---================================================
 ---////////////////////////////////////////////////
 
-	PRINT 'Comenzando creación de SCHEMA...'
-	SET @T_SQL = 'CREATE SCHEMA ' + @NuevoSchema + ''
+	PRINT 'Starting SCHEMA creation...'
+	SET @T_SQL = 'CREATE SCHEMA ' + @NewSchema + ''
 	EXEC(@T_SQL)
-	PRINT 'Completado creacion de SCHEMA!'
+	PRINT 'SCHEMA creation completed!'
 
 	--<[==================================================================================
-	--<[///CLONANDO TABLAS
-	PRINT 'Comenzando Clonacion de Tablas...'
+	--<[///CLONE TABLES
+	PRINT 'Starting Table Cloning...'
 	SET @T_SQL = NULL
 	DECLARE cTABL CURSOR FOR
 	SELECT OBJtablas = NAME FROM sys.tables WHERE SCHEMA_ID = @Id_SCHEMA
@@ -28,20 +35,20 @@ BEGIN TRY
 	FETCH NEXT FROM cTABL INTO @T_SQL
 		WHILE @@FETCH_STATUS = 0
 			BEGIN
-				EXEC('SET NOCOUNT ON; SELECT * INTO ' + @NuevoSchema + '.' + @T_SQL + ' FROM '+ @CloneShema +'.' + @T_SQL + ' WHERE 0=1')
+				EXEC('SET NOCOUNT ON; SELECT * INTO ' + @NewSchema + '.' + @T_SQL + ' FROM '+ @CopySchema +'.' + @T_SQL + ' WHERE 0=1')
 				FETCH NEXT FROM cTABL INTO @T_SQL
 			END
 		CLOSE cTABL
 	DEALLOCATE cTABL
-	PRINT 'Completado Clonacion de Tablas!'
+	PRINT 'Completed Table Cloning!'
 
 	--<[==================================================================================
-	--<[///CLONANDO LLAVES PK
-	PRINT 'Comenzando Clonacion de PKs...'
+	--<[///CLONE PRIMARY
+	PRINT 'Starting Primary Keys Cloning...'
 	SET @T_SQL = NULL
-	DECLARE cPKllaves CURSOR FOR
+	DECLARE cPKs CURSOR FOR
 	SELECT
-		'ALTER TABLE ' + @NuevoSchema + '.' + OBJECT_NAME(i.object_id) + 
+		'ALTER TABLE ' + @NewSchema + '.' + OBJECT_NAME(i.object_id) + 
 		' ADD CONSTRAINT ' + i.name + ' PRIMARY KEY(' +
 		stuff((
 				SELECT ',' + COL_NAME(ic.OBJECT_ID,ic.column_id)
@@ -55,48 +62,48 @@ BEGIN TRY
 	WHERE i.is_primary_key = 1 AND o.schema_id = @Id_SCHEMA
 	ORDER BY i.object_id
 
-	OPEN cPKllaves
-	FETCH NEXT FROM cPKllaves INTO @T_SQL
+	OPEN cPKs
+	FETCH NEXT FROM cPKs INTO @T_SQL
 		WHILE @@FETCH_STATUS = 0
 			BEGIN
 				EXEC(@T_SQL)
-				FETCH NEXT FROM cPKllaves INTO @T_SQL
+				FETCH NEXT FROM cPKs INTO @T_SQL
 			END
-		CLOSE cPKllaves
-	DEALLOCATE cPKllaves
-	PRINT 'Completado Clonacion de PKs!'
+		CLOSE cPKs
+	DEALLOCATE cPKs
+	PRINT 'Completed Cloning of Primary Keys!'
 
 	--<[==================================================================================
-	--<[///CLONANDO LLAVES DF
-	PRINT 'Comenzando Clonacion de DFs...'
+	--<[///CLONE DEFAULT
+	PRINT 'Starting DF Cloning...'
 	SET @T_SQL = NULL
-	DECLARE cDFllaves CURSOR FOR
+	DECLARE cDFs CURSOR FOR
 	SELECT
-		'ALTER TABLE ' + @NuevoSchema + '.' + OBJECT_NAME(dc.parent_object_id) + 
+		'ALTER TABLE ' + @NewSchema + '.' + OBJECT_NAME(dc.parent_object_id) + 
 		' ADD CONSTRAINT ' + dc.name + ' DEFAULT(' + definition 
 		+ ') FOR ' + c.name AS DFkeys
 	FROM sys.default_constraints dc
 	INNER JOIN sys.columns c ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
 	WHERE dc.SCHEMA_ID = @Id_SCHEMA
 
-	OPEN cDFllaves
-	FETCH NEXT FROM cDFllaves INTO @T_SQL
+	OPEN cDFs
+	FETCH NEXT FROM cDFs INTO @T_SQL
 		WHILE @@FETCH_STATUS = 0
 			BEGIN
 				EXEC(@T_SQL)
-				FETCH NEXT FROM cDFllaves INTO @T_SQL
+				FETCH NEXT FROM cDFs INTO @T_SQL
 			END
-		CLOSE cDFllaves
-	DEALLOCATE cDFllaves
-	PRINT 'Completado Clonacion de DFs!'
+		CLOSE cDFs
+	DEALLOCATE cDFs
+	PRINT 'Completed DF Cloning!'
 
 	--<[==================================================================================
-	--<[///CLONANDO LLAVES FK
-	PRINT 'Comenzando Clonacion de FKs...'
+	--<[///CLONE FOREIGN KEY
+	PRINT 'Starting Foreign Key Cloning...'
 	SET @T_SQL = NULL
-	DECLARE cFKllaves CURSOR FOR
+	DECLARE cFKs CURSOR FOR
 	SELECT
-		'ALTER TABLE ' + @NuevoSchema + '.' + OBJECT_NAME(ff.parent_object_id) + 
+		'ALTER TABLE ' + @NewSchema + '.' + OBJECT_NAME(ff.parent_object_id) + 
 		' WITH NOCHECK ADD CONSTRAINT ' + OBJECT_NAME(ff.constraint_object_id) + ' FOREIGN KEY(' + --+ c.name
 		stuff((
 				SELECT ',' + c.name
@@ -105,7 +112,7 @@ BEGIN TRY
 				WHERE fa.constraint_object_id = o.object_id
 				FOR XML PATH('')
 				), 1, 1, '')
-		+ ') REFERENCES ' + @NuevoSchema + '.' + OBJECT_NAME(ff.referenced_object_id) + '(' +
+		+ ') REFERENCES ' + @NewSchema + '.' + OBJECT_NAME(ff.referenced_object_id) + '(' +
 		stuff((
 				SELECT ',' + cc.name
 				FROM sys.foreign_key_columns fb
@@ -123,61 +130,61 @@ BEGIN TRY
 		   , o.object_id, o.update_referential_action, o.delete_referential_action
 	ORDER BY ff.parent_object_id
 
-	OPEN cFKllaves
-	FETCH NEXT FROM cFKllaves INTO @T_SQL
+	OPEN cFKs
+	FETCH NEXT FROM cFKs INTO @T_SQL
 		WHILE @@FETCH_STATUS = 0
 			BEGIN
 				EXEC(@T_SQL)
-				FETCH NEXT FROM cFKllaves INTO @T_SQL
+				FETCH NEXT FROM cFKs INTO @T_SQL
 			END
-		CLOSE cFKllaves
-	DEALLOCATE cFKllaves
-	PRINT 'Completado Clonacion de FKs!'
+		CLOSE cFKs
+	DEALLOCATE cFKs
+	PRINT 'Completed Cloning of Foreign Key!'
 
 		--<[==================================================================================
-	--<[///CLONANDO DISPARADORES
-	PRINT 'Comenzando Clonacion de TGs...'
+	--<[///CLONE TRIGGERS
+	PRINT 'Starting Trigger Cloning...'
 	SET @T_SQL = NULL
-	DECLARE cDISP CURSOR FOR
-	SELECT DEFIdisparadores =  REPLACE(
+	DECLARE cTGRs CURSOR FOR
+	SELECT T_SQL =  REPLACE(
 								REPLACE(definition
-									    , CASE WHEN CHARINDEX('['+ @CloneShema +'].['+o.name+']', definition) > 0
-											THEN '['+ @CloneShema +'].['+o.name+']'
+									    , CASE WHEN CHARINDEX('['+ @CopySchema +'].['+o.name+']', definition) > 0
+											THEN '['+ @CopySchema +'].['+o.name+']'
 											ELSE o.name
 									     END 
-							            , '['+ @NuevoSchema +'].[' + o.name + ']')
-						     , CASE WHEN CHARINDEX(@CloneShema +'.'+object_name(t.parent_id), definition) > 0
-											THEN @CloneShema +'.'+object_name(t.parent_id)
+							            , '['+ @NewSchema +'].[' + o.name + ']')
+						     , CASE WHEN CHARINDEX(@CopySchema +'.'+object_name(t.parent_id), definition) > 0
+											THEN @CopySchema +'.'+object_name(t.parent_id)
 											ELSE object_name(t.parent_id)
 									  END
-						    , @NuevoSchema +'.' + object_name(t.parent_id))
+						    , @NewSchema +'.' + object_name(t.parent_id))
 	FROM sys.triggers t 
 	INNER JOIN sys.sql_modules m ON t.object_id = m.object_id
 	INNER JOIN sys.objects o ON o.object_id = t.object_id
 	WHERE o.schema_id = @Id_SCHEMA
 
-	OPEN cDISP
-	FETCH NEXT FROM cDISP INTO @T_SQL
+	OPEN cTGRs
+	FETCH NEXT FROM cTGRs INTO @T_SQL
 		WHILE @@FETCH_STATUS = 0
 			BEGIN
 				EXEC(@T_SQL)
-				FETCH NEXT FROM cDISP INTO @T_SQL
+				FETCH NEXT FROM cTGRs INTO @T_SQL
 			END
-		CLOSE cDISP
-	DEALLOCATE cDISP
-	PRINT 'Completado Clonacion de TGs!'
+		CLOSE cTGRs
+	DEALLOCATE cTGRs
+	PRINT 'Completed Trigger Cloning!'
 
 	--<[==================================================================================
-	--<[///CLONANDO FUNCIONES
-	PRINT 'Comenzando Clonacion de FNs...'
+	--<[///CLONE FUNCTIONS
+	PRINT 'Starting Function Cloning...'
 	SET @T_SQL = NULL
 	DECLARE cFUNC CURSOR FOR
-	SELECT DEFIfunciones = REPLACE(definition
-							 , CASE WHEN CHARINDEX('[' + @CloneShema + '].['+f.name+']', definition) > 0 THEN '[' + @CloneShema + '].['+f.name+']'
-									WHEN CHARINDEX('' + @CloneShema + '.'+f.name+'', definition) > 0 THEN '' + @CloneShema + '.'+f.name+''
+	SELECT T_SQL = REPLACE(definition
+							 , CASE WHEN CHARINDEX('[' + @CopySchema + '].['+f.name+']', definition) > 0 THEN '[' + @CopySchema + '].['+f.name+']'
+									WHEN CHARINDEX('' + @CopySchema + '.'+f.name+'', definition) > 0 THEN '' + @CopySchema + '.'+f.name+''
 									ELSE f.name
 							  END 
-						 , '[' + @NuevoSchema + '].[' + f.name + ']')
+						 , '[' + @NewSchema + '].[' + f.name + ']')
 	FROM sys.objects f 
 	INNER JOIN sys.sql_modules m ON f.object_id = m.object_id WHERE f.TYPE in ('FN', 'IF', 'TF') AND f.SCHEMA_ID = @Id_SCHEMA
 
@@ -190,23 +197,23 @@ BEGIN TRY
 			END
 		CLOSE cFUNC
 	DEALLOCATE cFUNC
-	PRINT 'Completado Clonacion de FNs!'
+	PRINT 'Completed Function Cloning!'
 
 	--<[==================================================================================
-	--<[///CLONANDO PROCEDIMIENTOS
-	PRINT 'Comenzando Clonacion de SPs...'
+	--<[///CLONE STORE PROCEDURES
+	PRINT 'Started Cloning Store Procedures...'
 	SET @T_SQL = NULL
 	DECLARE cPROC CURSOR FOR
-	select DEFIprocedimientos  = REPLACE(definition
-									 , CASE WHEN CHARINDEX('[' + @CloneShema + '].['+p.name+']', definition) > 0
-											THEN '[' + @CloneShema + '].['+p.name+']'
+	select T_SQL  = REPLACE(definition
+									 , CASE WHEN CHARINDEX('[' + @CopySchema + '].['+p.name+']', definition) > 0
+											THEN '[' + @CopySchema + '].['+p.name+']'
 											ELSE 
-												CASE WHEN CHARINDEX(@CloneShema + '.'+p.name, definition) > 0
-													THEN @CloneShema + '.'+p.name
+												CASE WHEN CHARINDEX(@CopySchema + '.'+p.name, definition) > 0
+													THEN @CopySchema + '.'+p.name
 													ELSE p.name
 												END
 									  END 
-						 , '['+@NuevoSchema+'].[' + p.name + ']')
+						 , '['+@NewSchema+'].[' + p.name + ']')
 	from sys.procedures p
 	INNER JOIN sys.sql_modules m ON p.object_id = m.object_id
 	where p.SCHEMA_ID = @Id_SCHEMA AND p.type = 'P' and name <> 'CloneLogicDB64'
@@ -221,23 +228,23 @@ BEGIN TRY
 			END
 		CLOSE cPROC
 	DEALLOCATE cPROC
-	PRINT 'Completado Clonacion de SPs!'
+	PRINT 'Completed Cloning of Store Procedures!'
 
 	--<[==================================================================================
-	--<[///CLONANDO VISTAS
-	PRINT 'Comenzando Clonacion de Views...'
+	--<[///CLONE VIEW
+	PRINT 'Starting View Cloning...'
 	SET @T_SQL = NULL
 	DECLARE cVIEW CURSOR FOR
-	select DEFIviews  = REPLACE(definition
-									 , CASE WHEN CHARINDEX('[' + @CloneShema + '].['+v.name+']', definition) > 0
-											THEN '[' + @CloneShema + '].['+v.name+']'
+	select T_SQL  = REPLACE(definition
+									 , CASE WHEN CHARINDEX('[' + @CopySchema + '].['+v.name+']', definition) > 0
+											THEN '[' + @CopySchema + '].['+v.name+']'
 											ELSE 
-												CASE WHEN CHARINDEX(@CloneShema + '.'+v.name, definition) > 0
-													THEN @CloneShema + '.'+v.name
+												CASE WHEN CHARINDEX(@CopySchema + '.'+v.name, definition) > 0
+													THEN @CopySchema + '.'+v.name
 													ELSE v.name
 												END
 									  END 
-						 , '['+@NuevoSchema+'].[' + v.name + ']')
+						 , '['+@NewSchema+'].[' + v.name + ']')
 	from sys.views v
 	INNER JOIN sys.sql_modules m ON v.object_id = m.object_id
 	where v.SCHEMA_ID = @Id_SCHEMA AND v.type = 'V'
@@ -252,14 +259,14 @@ BEGIN TRY
 			END
 		CLOSE cVIEW
 	DEALLOCATE cVIEW
-	PRINT 'Completado Clonacion de Views!'
+	PRINT 'Completed View Cloning!'
 
 	--<[==================================================================================
 	--<[///CLONANDO VISTAS
-	PRINT 'Comenzando Clonacion de IUnique...'
+	PRINT 'Starting Unique Index Cloning...'
 	SET @T_SQL = NULL
 	DECLARE cINDEXU CURSOR FOR
-	select DEFIuniqueindex  = 'CREATE UNIQUE INDEX '+ ind.name +' ON '+ '['+@NuevoSchema+'].[' + t.name +'] (' +
+	select T_SQL  = 'CREATE UNIQUE INDEX '+ ind.name +' ON '+ '['+@NewSchema+'].[' + t.name +'] (' +
 							 stuff((
 										SELECT ',' + col.name
 										FROM sys.index_columns ic
@@ -290,18 +297,18 @@ BEGIN TRY
 			END
 		CLOSE cINDEXU
 	DEALLOCATE cINDEXU
-	PRINT 'Completado Clonacion de IUnique!'
+	PRINT 'Completed Cloning of Unique Index!'
 
 
-	COMMIT TRANSACTION ClonacionLogicaDataBaseJdz
-	PRINT 'CLONACION COMPLETADA EXITOSAMENTE!'
+	COMMIT TRANSACTION ts_CopySchemaJdz
+	PRINT 'CLONING SUCCESSFULLY COMPLETED!'
 	SELECT  
         ErrorNumber = -1
         ,ErrorSeverity = 0
         ,ErrorState = 0
         ,ErrorProcedure = NULL
         ,ErrorLine  = 0
-        ,ErrorMessage = 'Sin Errores!'
+        ,ErrorMessage = '0 errors!'
 
 ---\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 ---================================================
@@ -309,8 +316,8 @@ END TRY
 BEGIN CATCH
 	---================================================
 	---////////////////////////////////////////////////
-	ROLLBACK TRANSACTION ClonacionLogicaDataBaseJdz
-	PRINT 'INTERRUPCION...'
+	ROLLBACK TRANSACTION ts_CopySchemaJdz
+	PRINT 'INTERRUPTION...'
 	SELECT  
         ERROR_NUMBER() AS ErrorNumber  
         ,ERROR_SEVERITY() AS ErrorSeverity  
@@ -328,31 +335,31 @@ BEGIN CATCH
 	 DEALLOCATE cTABL
 	END
 
-	IF (SELECT CURSOR_STATUS('global','cPKllaves')) >= -1
+	IF (SELECT CURSOR_STATUS('global','cPKs')) >= -1
 	 BEGIN
-	  IF (SELECT CURSOR_STATUS('global','cPKllaves')) > -1
+	  IF (SELECT CURSOR_STATUS('global','cPKs')) > -1
 	   BEGIN
-		CLOSE cPKllaves
+		CLOSE cPKs
 	   END
-	 DEALLOCATE cPKllaves
+	 DEALLOCATE cPKs
 	END
 
-	IF (SELECT CURSOR_STATUS('global','cDFllaves')) >= -1
+	IF (SELECT CURSOR_STATUS('global','cDFs')) >= -1
 	 BEGIN
-	  IF (SELECT CURSOR_STATUS('global','cDFllaves')) > -1
+	  IF (SELECT CURSOR_STATUS('global','cDFs')) > -1
 	   BEGIN
-		CLOSE cDFllaves
+		CLOSE cDFs
 	   END
-	 DEALLOCATE cDFllaves
+	 DEALLOCATE cDFs
 	END
 
-	IF (SELECT CURSOR_STATUS('global','cFKllaves')) >= -1
+	IF (SELECT CURSOR_STATUS('global','cFKs')) >= -1
 	 BEGIN
-	  IF (SELECT CURSOR_STATUS('global','cFKllaves')) > -1
+	  IF (SELECT CURSOR_STATUS('global','cFKs')) > -1
 	   BEGIN
-		CLOSE cFKllaves
+		CLOSE cFKs
 	   END
-	 DEALLOCATE cFKllaves
+	 DEALLOCATE cFKs
 	END
 
 	IF (SELECT CURSOR_STATUS('global','cPROC')) >= -1
@@ -364,13 +371,13 @@ BEGIN CATCH
 	 DEALLOCATE cPROC
 	END
 
-	IF (SELECT CURSOR_STATUS('global','cDISP')) >= -1
+	IF (SELECT CURSOR_STATUS('global','cTGRs')) >= -1
 	 BEGIN
-	  IF (SELECT CURSOR_STATUS('global','cDISP')) > -1
+	  IF (SELECT CURSOR_STATUS('global','cTGRs')) > -1
 	   BEGIN
-		CLOSE cDISP
+		CLOSE cTGRs
 	   END
-	 DEALLOCATE cDISP
+	 DEALLOCATE cTGRs
 	END
 
 	IF (SELECT CURSOR_STATUS('global','cFUNC')) >= -1
@@ -385,6 +392,6 @@ BEGIN CATCH
 	---================================================
 END CATCH
 
--->>> CloneLogicDB64 'dbo', 'GOTNX01'
+-->>> sys_CloneDatabaseSchema 'dbo', 'CompanyX'
 
-
+GO
