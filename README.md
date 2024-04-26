@@ -14,6 +14,7 @@ This SQL Server stored procedure allows you to clone a schema from one database 
 
 ```sql
 EXEC sys_CloneDatabaseSchema 'source_schema_name', 'destination_schema_name'
+```
 
 ## Features
 The `CloneSchema` stored procedure clones the following objects from the source database to the destination database:
